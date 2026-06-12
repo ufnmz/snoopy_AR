@@ -11,7 +11,11 @@
     #canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
 
     /* ── Splash ── */
-    @import url('https://fonts.googleapis.com/css2?family=Bubblegum+Sans&family=Nunito:wght@600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600&display=swap');
+    @font-face {
+      font-family: 'SnoopyFont';
+      src: url('snoopy_reg-webfont.otf') format('opentype');
+    }
 
     #splash {
       position: fixed; inset: 0; z-index: 10;
@@ -26,7 +30,7 @@
     }
 
     #splash h1 {
-      font-family: 'Bubblegum Sans', cursive;
+      font-family: 'SnoopyFont', cursive;
       font-size: 52px; font-weight: 900;
       color: #1a1a1a;
       letter-spacing: -1px;
@@ -39,10 +43,26 @@
 
     #splash p {
       font-family: 'Nunito', sans-serif;
-      font-size: 17px; font-weight: 600;
-      color: #aaa;
+      font-size: 16px; font-weight: 600;
+      color: #555;
       text-align: center;
-      letter-spacing: 0.04em;
+      max-width: 240px; line-height: 1.6;
+    }
+
+    #start-btn {
+      font-family: 'SnoopyFont', cursive;
+      font-size: 22px;
+      padding: 14px 52px;
+      background: #1a1a1a;
+      color: #fff;
+      border: none; border-radius: 40px;
+      cursor: pointer;
+      box-shadow: 0 4px 0 #E8382D;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    #start-btn:active {
+      transform: translateY(3px);
+      box-shadow: 0 1px 0 #E8382D;
     }
 
     /* ── AR hint pill ── */
@@ -63,7 +83,8 @@
   <div id="splash">
     <div id="splash-content">
       <h1>Snoopy <em>AR</em></h1>
-      <p>Tap anywhere to start</p>
+      <p>Point your camera at the QR code to see Snoopy.</p>
+      <button id="start-btn">Start</button>
     </div>
   </div>
 
@@ -80,7 +101,7 @@
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-    document.getElementById('splash').addEventListener('click', async () => {
+    document.getElementById('start-btn').addEventListener('click', async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: 'environment' } },
