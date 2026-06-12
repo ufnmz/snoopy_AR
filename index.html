@@ -5,14 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Snoopy AR</title>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    #start-screen {
+      position: fixed; inset: 0; z-index: 999;
+      background: #0a0a1a;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 24px;
+    }
+    #start-screen p { color: rgba(255,255,255,0.6); font-family: -apple-system, sans-serif; font-size: 16px; text-align: center; max-width: 260px; line-height: 1.6; }
+    #start-btn {
+      padding: 16px 48px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff; border: none; border-radius: 40px;
+      font-size: 18px; font-weight: 700; cursor: pointer;
+      font-family: -apple-system, sans-serif;
+    }
+  </style>
 </head>
 <body>
+  <div id="start-screen">
+    <p>Point your camera at the<br>Snoopy QR code 🐾</p>
+    <button id="start-btn">Start AR</button>
+  </div>
+
   <a-scene
-    mindar-image="imageTargetSrc: targets.mind"
+    id="scene"
+    mindar-image="imageTargetSrc: targets.mind; autoStart: false"
     color-space="sRGB"
     renderer="colorManagement: true; physicallyCorrectLights: true"
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false"
+    style="display:none"
   >
     <a-assets>
       <a-asset-item id="snoopy" src="source/snoopy.glb"></a-asset-item>
@@ -25,9 +49,19 @@
         src="#snoopy"
         scale="0.05 0.05 0.05"
         position="0 0.05 0"
-        rotation="0 0 0"
       ></a-gltf-model>
     </a-entity>
   </a-scene>
+
+  <script>
+    document.getElementById('start-btn').addEventListener('click', () => {
+      document.getElementById('start-screen').style.display = 'none';
+      const scene = document.getElementById('scene');
+      scene.style.display = 'block';
+      scene.addEventListener('loaded', () => {
+        scene.systems['mindar-image-system'].start();
+      }, { once: true });
+    });
+  </script>
 </body>
 </html>
