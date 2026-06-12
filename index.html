@@ -2,12 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Snoopy AR</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; touch-action: none; }
-    #cam    { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden; touch-action: none;
+      /* fill notch/safe areas with black */
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    #cam    { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
     #canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
 
     /* ── Splash ── */
@@ -190,31 +196,37 @@
         }
       }, 200);
 
-      // ── Touch rotation (Y axis only) ──────────────────────────
-      let rotY = 0;
-      let lastTouchX = null;
+      // ── Touch rotation (drag left/right = Y, drag up/down = X) ──
+      let rotY = 0, rotX = 0;
+      let lastTouchX = null, lastTouchY = null;
 
       canvas.addEventListener('touchstart', e => {
         e.preventDefault();
         lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
       }, { passive: false });
 
       canvas.addEventListener('touchmove', e => {
         e.preventDefault();
         const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
         rotY += (x - lastTouchX) * 0.012;
+        rotX += (y - lastTouchY) * 0.012;
         lastTouchX = x;
+        lastTouchY = y;
       }, { passive: false });
 
-      canvas.addEventListener('touchend', () => { lastTouchX = null; }, { passive: true });
+      canvas.addEventListener('touchend', () => { lastTouchX = null; lastTouchY = null; }, { passive: true });
 
       // Mouse fallback for desktop
-      let mouseDown = false, lastMouseX = 0;
-      canvas.addEventListener('mousedown', e => { mouseDown = true; lastMouseX = e.clientX; });
+      let mouseDown = false, lastMouseX = 0, lastMouseY = 0;
+      canvas.addEventListener('mousedown', e => { mouseDown = true; lastMouseX = e.clientX; lastMouseY = e.clientY; });
       window.addEventListener('mousemove', e => {
         if (!mouseDown) return;
         rotY += (e.clientX - lastMouseX) * 0.012;
+        rotX += (e.clientY - lastMouseY) * 0.012;
         lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
       });
       window.addEventListener('mouseup', () => mouseDown = false);
 
@@ -227,6 +239,7 @@
         t += delta;
         if (mixer) mixer.update(delta);
         pivot.rotation.y = rotY;
+        pivot.rotation.x = rotX;
         if (model) model.position.y = -0.2 + Math.sin(t * 1.5) * 0.04;
         renderer.render(scene, cam3);
       });
