@@ -1,0 +1,738 @@
+================================================================================
+  SNOOPY AR — HOW IT WORKS
+  A complete guide so you can build this again from scratch on your own.
+================================================================================
+
+
+--------------------------------------------------------------------------------
+  WHAT THE APP DOES (BIG PICTURE)
+--------------------------------------------------------------------------------
+
+When a user scans a QR code with their phone, they land on a webpage.
+That webpage opens the phone's camera, scans what the camera sees every
+200 milliseconds, and when it spots a QR code in the frame, it draws a
+3D animated Snoopy model floating in front of the camera.
+
+The user can:
+  - Drag with one finger  → rotate Snoopy left/right and up/down
+  - Pinch with two fingers → zoom Snoopy in or out
+  - Move the QR code out of frame → Snoopy disappears
+
+It is NOT true spatial AR (Snoopy does not sit on a physical surface).
+It is a "camera overlay" — the camera feed plays as a full-screen video
+background, and a transparent 3D canvas sits on top of it. Snoopy is
+always at a fixed position in the center of the screen, 1.5 meters in
+front of the virtual camera. This approach works on every phone with no
+special AR libraries or app installs.
+
+
+--------------------------------------------------------------------------------
+  THE FILES YOU NEED
+--------------------------------------------------------------------------------
+
+Your project only needs 4 files:
+
+  index.html              — The entire app. HTML + CSS + JavaScript in one file.
+  snoopy.glb              — The 3D Snoopy model (GLB = GL Binary format).
+  snoopy_reg-webfont.otf  — The custom Snoopy font for the splash screen.
+  qr.png                  — The QR code image that links to your GitHub Pages URL.
+
+That's it. No build tools, no npm packages at runtime, no server needed.
+Everything else (Three.js, jsQR) is loaded from a CDN (the internet) when
+the page opens.
+
+
+--------------------------------------------------------------------------------
+  HOW THE HTML FILE IS STRUCTURED
+--------------------------------------------------------------------------------
+
+An HTML file has three sections: <head>, <body>, and <script>.
+
+  <head>
+    Contains invisible setup: the page title, font imports, and all the CSS
+    (styling). Nothing in <head> is visible on screen.
+
+  <body>
+    Contains the visible elements: the video, the canvas, the hint pill,
+    and the splash screen.
+
+  <script>
+    Contains the JavaScript — the logic that makes everything work.
+
+In this project, all three live in one file (index.html) for simplicity.
+
+
+--------------------------------------------------------------------------------
+  THE CSS (STYLING) — EXPLAINED SECTION BY SECTION
+--------------------------------------------------------------------------------
+
+--- FONTS ---
+
+  @font-face {
+    font-family: 'SnoopyFont';
+    src: url('snoopy_reg-webfont.otf') format('opentype');
+  }
+
+  This tells the browser: "I have a custom font stored in the file
+  snoopy_reg-webfont.otf. Call it SnoopyFont so I can use it in CSS."
+  After this, anywhere you write font-family: 'SnoopyFont' the browser
+  uses that font file.
+
+  The Google Fonts link in <head> loads the "Nunito" font from the internet.
+  Nunito is used for the subtitle paragraph (it's clean and rounded).
+
+--- RESETTING DEFAULTS ---
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  By default, browsers add spacing around elements. The * means "apply
+  this to everything". This line removes all that default spacing so
+  elements sit exactly where you put them.
+
+--- BODY BACKGROUND ---
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #000;
+    overflow: hidden;
+    touch-action: none;
+    padding: env(safe-area-inset-top) ...
+  }
+
+  width/height 100%   → Fill the whole screen.
+  background: #000    → Black background. This fills any gaps the camera
+                        video doesn't cover (like notch areas on iPhones).
+  overflow: hidden    → Prevents any scrolling.
+  touch-action: none  → Tells the browser "don't do default touch behaviors
+                        like scrolling or zooming — I'll handle touch myself".
+  padding: env(...)   → On iPhones with a notch or Dynamic Island, iOS
+                        reserves safe zones at the edges. env(safe-area-inset-*)
+                        reads those safe zone sizes so we can pad the body
+                        with black instead of letting white show through.
+  viewport-fit=cover  → This meta tag (in <head>) tells iOS to let the page
+                        extend behind the notch. Without it, the safe-area
+                        values don't work.
+
+--- THE VIDEO ELEMENT (CAMERA FEED) ---
+
+  #cam {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    background: #000;
+  }
+
+  position: fixed     → Locks this element to the screen. It won't scroll.
+  inset: 0            → Short for top:0, right:0, bottom:0, left:0.
+                        Stretches it to every corner of the screen.
+  object-fit: cover   → The camera feed might not match the exact screen
+                        ratio. "cover" means: fill the whole screen, crop
+                        the edges if needed (like a background photo).
+  background: #000    → While the camera is loading, show black (not white).
+
+--- THE CANVAS ELEMENT (3D OVERLAY) ---
+
+  #canvas {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    touch-action: none;
+  }
+
+  Same as the video — it covers the full screen. It sits on top of the
+  video because it comes later in the HTML (HTML elements stack in order).
+  It is transparent (Three.js is told to use alpha: true and clear color
+  with 0 opacity), so the camera shows through wherever Snoopy isn't drawn.
+
+--- THE HINT PILL ---
+
+  #hint {
+    position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
+    ...
+    transition: opacity 0.4s;
+  }
+
+  This is the "Point at the QR code" label at the bottom of the screen.
+  position: fixed bottom: 36px  → Sticks to the bottom of the screen.
+  left: 50% + translateX(-50%)  → Centers it horizontally. (left:50% puts
+                                   the left edge at center; translateX moves
+                                   it left by half its own width.)
+  transition: opacity 0.4s      → When the opacity changes (QR found/lost),
+                                   it fades smoothly over 0.4 seconds.
+
+--- THE SPLASH SCREEN ---
+
+  #splash {
+    position: fixed; inset: 0; z-index: 10;
+    background: #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  z-index: 10         → Z-index controls which element sits on top of others.
+                        10 means it covers everything else (video, canvas).
+  background: #fff    → White background.
+  display: flex       → Flexbox layout. Makes centering easy.
+  align-items: center → Centers children vertically.
+  justify-content:
+    center            → Centers children horizontally.
+
+  When the user taps Start, JavaScript hides this with:
+    document.getElementById('splash').style.display = 'none';
+
+--- THE START BUTTON ---
+
+  #start-btn {
+    font-family: 'SnoopyFont', cursive;
+    font-size: 22px;
+    padding: 14px 52px;
+    background: #1a1a1a;
+    color: #fff;
+    border: none; border-radius: 40px;
+    cursor: pointer;
+    box-shadow: 0 4px 0 #E8382D;
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+
+  border-radius: 40px → Makes it a pill/capsule shape.
+  box-shadow: 0 4px 0 #E8382D → Adds a red "bottom edge" shadow, giving it
+                                  a 3D pressed-button look.
+  transition: ...     → Animates the press effect smoothly.
+
+  #start-btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #E8382D;
+  }
+
+  :active applies when the button is being pressed. It moves the button
+  down 3px and shrinks the shadow — looks like a physical button click.
+
+
+--------------------------------------------------------------------------------
+  THE HTML BODY ELEMENTS
+--------------------------------------------------------------------------------
+
+  <video id="cam" autoplay playsinline muted></video>
+
+  autoplay    → Start playing as soon as the stream is connected.
+  playsinline → On iOS, video plays inside the page (not fullscreen).
+                Without this, iOS opens video in a separate fullscreen player.
+  muted       → Required by browsers to allow autoplay without user gesture.
+
+  <canvas id="canvas"></canvas>
+
+  An empty canvas element. Three.js will draw into this.
+
+  <div id="hint" style="display:none">Point at the QR code</div>
+
+  Hidden by default (display:none). JavaScript shows it after Start is tapped.
+
+  The splash screen HTML just contains the title, paragraph, and button.
+  The <em> tag around "AR" in the title is styled red in CSS (em normally
+  means italic, but we overrode that with font-style: normal and color: red).
+
+
+--------------------------------------------------------------------------------
+  THE JAVASCRIPT — EXPLAINED STEP BY STEP
+--------------------------------------------------------------------------------
+
+--- LIBRARIES LOADED ---
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+  jsQR is a JavaScript library that reads QR codes from image data.
+  Loading it from a CDN means the browser downloads it from the internet
+  when the page loads. After it loads, a global function called jsQR()
+  becomes available.
+
+  <script type="importmap">
+  { "imports": {
+    "three":         "https://...three.module.js",
+    "three/addons/": "https://...examples/jsm/"
+  }}
+  </script>
+
+  An import map tells the browser: "When the code says import from 'three',
+  actually fetch it from this URL." This allows clean import statements
+  without needing npm or a build tool.
+
+  Three.js is a 3D graphics library for the browser. It handles the renderer,
+  scene, camera, lights, and 3D objects. It is the most important library here.
+
+--- THE START BUTTON CLICK ---
+
+  document.getElementById('start-btn').addEventListener('click', async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      document.getElementById('cam').srcObject = stream;
+    } catch {
+      alert('Camera permission needed...');
+      return;
+    }
+    document.getElementById('splash').style.display = 'none';
+    document.getElementById('hint').style.display = 'block';
+    initAR();
+  });
+
+  addEventListener('click', ...)
+    → Runs the function inside whenever the button is clicked/tapped.
+
+  async / await
+    → getUserMedia returns a "Promise" — meaning it takes time (the browser
+      needs to ask permission). "async" marks the function as one that can
+      wait. "await" pauses here until the permission is granted or denied.
+
+  navigator.mediaDevices.getUserMedia(...)
+    → This is the browser API that requests camera access.
+      facingMode: { ideal: 'environment' } means "prefer the rear camera".
+      On a laptop this falls back to the webcam.
+
+  stream → srcObject
+    → The camera stream is connected to the <video> element. The video
+      element then displays the camera feed live.
+
+  try / catch
+    → "try" runs the code. If anything fails (user denies camera), "catch"
+      runs instead, showing an alert. Without this, a denied permission
+      would silently crash the app.
+
+  After success:
+    - The splash is hidden (display: none).
+    - The hint pill is shown.
+    - initAR() is called to set up the 3D scene.
+
+--- THE initAR FUNCTION ---
+
+  This function sets up everything Three.js needs.
+
+  STEP 1 — THE RENDERER
+
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+
+    The renderer is the engine that draws 3D graphics onto the canvas.
+    canvas      → Which HTML canvas element to draw into.
+    alpha: true → Allow transparency (so the camera shows through).
+    antialias   → Smooth the edges of 3D objects (no jagged pixels).
+
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    → Modern phones have very high-res screens (3x, 4x pixel density).
+      Using the full density would be too slow. We cap at 2x — sharp enough,
+      fast enough.
+
+    renderer.setClearColor(0x000000, 0);
+    → Clear the canvas with black at 0% opacity (fully transparent).
+      This is what makes the camera show through.
+
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.4;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    → These make colors look cinematic and accurate, like a camera rather
+      than flat computer graphics. ACESFilmic is the same color grading
+      used in film and game engines. 1.4 exposure = slightly brighter.
+
+  STEP 2 — THE SCENE AND CAMERA
+
+    const scene = new THREE.Scene();
+
+    A "scene" is like a stage — you add objects, lights, and cameras to it.
+    Everything you want to render must be added to the scene.
+
+    const cam3 = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 1000);
+
+    The Three.js camera defines what the viewer "sees" in the 3D world.
+    50               → Field of view in degrees. 50 is close to human vision.
+    innerWidth/innerHeight → Aspect ratio (width ÷ height). Must match screen.
+    0.01             → Near clipping plane. Objects closer than 0.01 units
+                       are not drawn.
+    1000             → Far clipping plane. Objects farther than 1000 units
+                       are not drawn.
+
+  STEP 3 — LIGHTING
+
+    scene.add(new THREE.AmbientLight(0xffffff, 2.5));
+
+    AmbientLight illuminates everything equally from all directions.
+    0xffffff = white light. 2.5 = intensity (quite bright).
+    Without ambient light, surfaces not facing a direct light would be
+    completely black.
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 3);
+    keyLight.position.set(2, 4, 3);
+    scene.add(keyLight);
+
+    DirectionalLight is like sunlight — parallel rays from one direction.
+    Position (2, 4, 3) means: slightly right, above, and in front.
+    Intensity 3 = strong. This is the main light that creates shadows and
+    makes Snoopy look 3D.
+
+    const fillLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    fillLight.position.set(-2, 1, -2);
+    scene.add(fillLight);
+
+    A second, softer light from the opposite direction to prevent harsh
+    black shadows on Snoopy's back side. This is called a "fill light"
+    in photography/film.
+
+  STEP 4 — THE PIVOT GROUP
+
+    const pivot = new THREE.Group();
+    pivot.position.set(0, 0, -1.5);
+    pivot.visible = false;
+    scene.add(pivot);
+
+    A Group is an invisible container. You put objects inside it and then
+    move/rotate the container instead of the object directly.
+
+    Why a group? Because rotating a group rotates everything inside it
+    around the group's center point. If you rotated the model directly,
+    it would rotate around its own origin (which might be its feet).
+
+    position (0, 0, -1.5) → In Three.js:
+      X = 0     → centered horizontally
+      Y = 0     → centered vertically
+      Z = -1.5  → 1.5 units in FRONT of the camera
+                  (negative Z is "into the screen" in Three.js)
+
+    visible = false → Hidden until a QR code is detected.
+
+  STEP 5 — LOADING THE 3D MODEL
+
+    new GLTFLoader().load('snoopy.glb', (gltf) => {
+      model = gltf.scene;
+      ...
+    });
+
+    GLTFLoader is a Three.js addon that reads .glb/.gltf files.
+    .load(filename, callback) → Downloads the file, then runs the callback
+    function when it's ready.
+
+    gltf.scene → The actual 3D object tree loaded from the file.
+
+    AUTO-SCALING:
+      const box    = new THREE.Box3().setFromObject(model);
+      const size   = box.getSize(new THREE.Vector3());
+      const sc     = 0.5 / Math.max(size.x, size.y, size.z);
+
+      Box3 computes a bounding box — the smallest box that fits around
+      the entire model. size gives its width/height/depth.
+      We want Snoopy to be 0.5 units tall regardless of how the model
+      was originally exported. So sc = 0.5 ÷ (biggest dimension).
+      model.scale.setScalar(sc) applies that scale uniformly to X, Y, Z.
+
+    CENTERING:
+      const center = box.getCenter(new THREE.Vector3());
+      model.position.set(-center.x * sc, -center.y * sc, 0);
+
+      The model's origin point (0,0,0) might not be at its visual center —
+      it could be at the feet, or off to one side. This shifts the model
+      so its visual center aligns with the pivot's center point.
+
+    ANIMATIONS:
+      mixer = new THREE.AnimationMixer(model);
+      gltf.animations.forEach(clip => mixer.clipAction(clip).play());
+
+      GLB files can contain animation data (like a walk cycle or bounce).
+      AnimationMixer plays those animations. We play all of them at once.
+      The mixer must be updated every frame (see the render loop).
+
+  STEP 6 — QR CODE DETECTION
+
+    const qrCanvas = document.createElement('canvas');
+    const qrCtx = qrCanvas.getContext('2d', { willReadFrequently: true });
+
+    We create a hidden canvas (not added to the page) just for processing.
+    willReadFrequently tells the browser we'll read pixel data often —
+    this lets it optimize memory for repeated reads.
+
+    setInterval(() => { ... }, 200);
+
+    setInterval runs its function every 200 milliseconds (5 times per second).
+    This is the QR scanning loop.
+
+    Inside the interval:
+      if (video.readyState < video.HAVE_ENOUGH_DATA) return;
+      → Don't scan if the camera feed isn't ready yet.
+
+      const W = Math.floor(video.videoWidth  / 2);
+      const H = Math.floor(video.videoHeight / 2);
+      → Scan at half resolution. The camera might be 1920×1080 but we only
+        need 960×540 to detect a QR code. Half resolution = 4x faster.
+
+      qrCtx.drawImage(video, 0, 0, W, H);
+      → Draws the current video frame onto the hidden canvas (shrunk to half).
+
+      const found = jsQR(qrCtx.getImageData(0,0,W,H).data, W, H);
+      → getImageData extracts raw pixel data (RGBA values for every pixel).
+        jsQR reads that data and tries to find a QR code pattern in it.
+        If found, it returns an object. If not found, it returns null/undefined.
+
+      if (found) {
+        lastSeen = Date.now();
+        if (!qrVisible && model) {
+          qrVisible = true;
+          pivot.visible = true;
+          hint.style.opacity = '0';
+        }
+      }
+      → When a QR is found:
+        Record the current time in lastSeen.
+        If Snoopy was hidden and the model is loaded, show him.
+
+      else if (qrVisible && Date.now() - lastSeen > 800) {
+        qrVisible = false;
+        pivot.visible = false;
+        hint.style.opacity = '1';
+      }
+      → When no QR is found AND it's been more than 800ms since we last
+        saw one: hide Snoopy and show the hint again.
+        The 800ms delay prevents Snoopy from flickering if the QR is
+        momentarily out of focus or partly blocked.
+
+  STEP 7 — TOUCH CONTROLS
+
+    let rotX = 0, rotY = 0, scale = 1;
+
+    rotX = rotation around the horizontal axis (tilt forward/back)
+    rotY = rotation around the vertical axis (spin left/right)
+    scale = zoom level (1.0 = default size)
+
+    These variables are updated by touch events and applied to the pivot
+    every frame in the render loop.
+
+    ONE FINGER — ROTATION:
+
+      touchstart → save the finger's X and Y position.
+      touchmove  → calculate how far the finger moved since last frame.
+                   Add that movement × 0.012 to rotX or rotY.
+                   0.012 is a sensitivity factor — smaller = slower rotation.
+                   Update the saved position for next move event.
+
+      Why e.preventDefault() with passive: false?
+      → By default, iOS intercepts touch events for scrolling. preventDefault
+        says "I'm handling this touch, don't scroll." passive: false is
+        required to be allowed to call preventDefault on touch events.
+
+    TWO FINGERS — PINCH ZOOM:
+
+      const pinchDist = e => Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+
+      Math.hypot(dx, dy) = √(dx² + dy²) = straight-line distance between
+      the two touch points (Pythagoras theorem).
+
+      On touchstart with 2 fingers: save the starting distance.
+      On touchmove with 2 fingers:
+        new distance ÷ old distance = how much fingers spread or closed.
+        Multiply scale by that ratio.
+        Math.max(0.2, Math.min(4, scale)) clamps scale between 0.2 and 4
+        so Snoopy can't be zoomed so small he disappears or so huge he fills
+        the universe.
+
+    MOUSE FALLBACK:
+      Same logic but using mouse events (mousedown, mousemove, mouseup)
+      for testing on a desktop computer. On a phone, mouse events never fire.
+
+  STEP 8 — THE RENDER LOOP
+
+    renderer.setAnimationLoop(() => {
+      const delta = clock.getDelta();
+      t += delta;
+      if (mixer) mixer.update(delta);
+      pivot.rotation.x = rotX;
+      pivot.rotation.y = rotY;
+      pivot.scale.setScalar(scale);
+      if (model) model.position.y = -0.3 + Math.sin(t * 1.5) * 0.04;
+      renderer.render(scene, cam3);
+    });
+
+    setAnimationLoop runs this function ~60 times per second (every frame).
+    This is what makes everything move and update smoothly.
+
+    clock.getDelta()
+    → Returns how many seconds passed since the last frame (usually ~0.016
+      for 60fps). Using this for animation instead of a fixed number means
+      animation speed stays the same regardless of frame rate.
+
+    mixer.update(delta)
+    → Advances the GLB animation by delta seconds.
+
+    pivot.rotation.x = rotX;
+    pivot.rotation.y = rotY;
+    → Applies the latest rotation values from touch input to the pivot group.
+      This is why Snoopy rotates when you drag.
+
+    pivot.scale.setScalar(scale);
+    → Applies the zoom level from pinch gestures.
+
+    model.position.y = -0.3 + Math.sin(t * 1.5) * 0.04;
+    → Makes Snoopy float up and down gently.
+      Math.sin(t * 1.5) produces a smooth wave between -1 and +1.
+      Multiplying by 0.04 makes the wave very small (±0.04 units).
+      Adding -0.3 sets the vertical center position.
+      TO MOVE SNOOPY UP OR DOWN: change -0.3 to a different number.
+        More negative = lower on screen.
+        Less negative (or positive) = higher on screen.
+
+    renderer.render(scene, cam3);
+    → Draws the scene as seen by cam3 onto the canvas. This is the line
+      that actually produces the image you see.
+
+  STEP 9 — RESIZE HANDLING
+
+    window.addEventListener('resize', () => {
+      renderer.setSize(innerWidth, innerHeight);
+      cam3.aspect = innerWidth / innerHeight;
+      cam3.updateProjectionMatrix();
+    });
+
+    When the phone rotates (portrait ↔ landscape), the screen dimensions
+    change. This updates the renderer size and camera aspect ratio to match.
+    Without this, the 3D scene would look stretched.
+
+
+--------------------------------------------------------------------------------
+  THE QR CODE
+--------------------------------------------------------------------------------
+
+The QR code (qr.png) encodes the URL of your GitHub Pages site:
+  https://mo-habbal.github.io/snoopy_AR/
+
+It was generated with Python using the "qrcode" library:
+  import qrcode
+  img = qrcode.make("https://mo-habbal.github.io/snoopy_AR/")
+  img.save("qr.png")
+
+Any QR code scanner app reads it and opens that URL in the browser.
+The app itself also detects any QR code in the camera — it doesn't check
+whether it's specifically the Snoopy QR, just that a QR exists in frame.
+
+
+--------------------------------------------------------------------------------
+  GITHUB PAGES — HOW THE HOSTING WORKS
+--------------------------------------------------------------------------------
+
+GitHub Pages is a free hosting service by GitHub. It serves your repository
+files as a live website.
+
+Setup:
+  1. Create a GitHub repository (in this case: Mo-Habbal/snoopy_AR)
+  2. Go to Settings → Pages → set source to "main branch, root folder"
+  3. GitHub Pages serves index.html at: https://mo-habbal.github.io/snoopy_AR/
+
+Deploying updates:
+  Every time you git push to the main branch, GitHub Pages automatically
+  updates the live site within about 30-60 seconds.
+
+The git workflow used here:
+  git add <files>     → Stage changed files
+  git commit -m "..."  → Save a snapshot with a message
+  git push origin main → Upload to GitHub → triggers Pages rebuild
+
+
+--------------------------------------------------------------------------------
+  THE 3D MODEL FORMAT (.GLB)
+--------------------------------------------------------------------------------
+
+GLB (GL Binary) is a standard 3D file format. It can contain:
+  - Geometry (the shape of the model — vertices, faces)
+  - Materials (colors, textures, how shiny/rough surfaces are)
+  - Animations (keyframe data for moving parts)
+  - Textures (image files baked into the binary)
+
+Three.js reads GLB files with GLTFLoader. The loaded object is a "scene"
+containing a tree of 3D objects (meshes, bones, etc).
+
+Important material properties:
+  metallicFactor  → 0 = plastic/wood, 1 = metal mirror. High values make
+                    surfaces reflect the environment. In Apple's Quick Look
+                    AR, a value of 1 with no environment map looks transparent.
+  roughnessFactor → 0 = perfectly smooth/shiny, 1 = completely matte.
+  alphaMode       → OPAQUE = solid, BLEND = transparent, MASK = cutout.
+
+
+--------------------------------------------------------------------------------
+  KEY NUMBERS YOU CAN CHANGE
+--------------------------------------------------------------------------------
+
+  Snoopy's vertical position (up/down on screen):
+    Line: model.position.y = -0.3 + Math.sin(t * 1.5) * 0.04;
+    Change -0.3. More negative = lower. Less negative = higher.
+
+  Snoopy's distance from camera:
+    Line: pivot.position.set(0, 0, -1.5);
+    Change -1.5. More negative (e.g. -3) = farther away = looks smaller.
+    Less negative (e.g. -0.8) = closer = looks bigger.
+
+  Snoopy's default size:
+    Line: const sc = 0.5 / Math.max(size.x, size.y, size.z);
+    Change 0.5. Bigger number = bigger Snoopy.
+
+  Floating bob speed:
+    Line: Math.sin(t * 1.5)
+    Change 1.5. Higher = faster bobbing.
+
+  Floating bob height:
+    Line: Math.sin(t * 1.5) * 0.04
+    Change 0.04. Bigger = more dramatic floating movement.
+
+  Rotation sensitivity:
+    Line: rotY += (...) * 0.012;
+    Change 0.012. Bigger = faster rotation per finger movement.
+
+  Pinch zoom limits:
+    Line: Math.max(0.2, Math.min(4, scale))
+    Change 0.2 (minimum zoom) and 4 (maximum zoom).
+
+  QR detection speed:
+    Line: setInterval(() => {...}, 200);
+    Change 200 (milliseconds). Lower = faster detection, more CPU usage.
+
+  QR disappear delay:
+    Line: Date.now() - lastSeen > 800
+    Change 800 (milliseconds). Higher = Snoopy stays longer after QR leaves.
+
+
+--------------------------------------------------------------------------------
+  HOW TO BUILD THIS FROM SCRATCH
+--------------------------------------------------------------------------------
+
+  1. Create a folder for your project.
+
+  2. Put your .glb model, your font file (.otf or .ttf), inside it.
+
+  3. Create index.html. The structure is:
+       - <head>: font imports, CSS
+       - <body>: video, canvas, hint, splash
+       - <script>: jsQR from CDN, importmap for Three.js, your JS code
+
+  4. In the JS, the order of operations is:
+       a. User taps Start button
+       b. Request camera (getUserMedia)
+       c. Connect camera stream to <video> element
+       d. Hide splash, show hint
+       e. Call initAR()
+       f. Inside initAR: set up renderer, scene, camera, lights, pivot group
+       g. Load the GLB model with GLTFLoader
+       h. Start QR scanning interval
+       i. Attach touch event listeners
+       j. Start render loop with setAnimationLoop
+
+  5. Create a GitHub repository and push your files.
+
+  6. Enable GitHub Pages (Settings → Pages → main branch → root).
+
+  7. Generate a QR code pointing to your GitHub Pages URL.
+     Use Python: pip3 install qrcode[pil]
+     Then:
+       import qrcode
+       qrcode.make("https://YOUR-USERNAME.github.io/YOUR-REPO/").save("qr.png")
+
+  8. Done. Scan the QR code with any phone to test.
+
+
+================================================================================
+  END OF GUIDE
+================================================================================
