@@ -7,67 +7,50 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #cam    { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
 
-    /* Camera feed sits behind everything */
-    #cam {
-      position: fixed; inset: 0;
-      width: 100%; height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1); /* mirror front cam; remove if rear cam */
-    }
-
-    /* Three.js canvas on top, transparent background */
-    #canvas {
-      position: fixed; inset: 0;
-      width: 100%; height: 100%;
-    }
-
-    /* Splash */
     #splash {
-      position: fixed; inset: 0; z-index: 10;
-      background: #0a0a1a;
+      position: fixed; inset: 0; z-index: 10; background: #0a0a1a;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 24px;
     }
     #splash h1 { color: #fff; font-size: 28px; font-weight: 700; font-family: -apple-system, sans-serif; }
     #splash p  { color: rgba(255,255,255,0.5); font-size: 15px; font-family: -apple-system, sans-serif; text-align: center; max-width: 260px; line-height: 1.6; }
     #start-btn {
-      padding: 16px 48px;
-      background: linear-gradient(135deg, #667eea, #764ba2);
+      padding: 16px 48px; background: linear-gradient(135deg, #667eea, #764ba2);
       color: #fff; border: none; border-radius: 40px;
-      font-size: 18px; font-weight: 700; cursor: pointer;
-      font-family: -apple-system, sans-serif;
+      font-size: 18px; font-weight: 700; cursor: pointer; font-family: -apple-system, sans-serif;
     }
 
     #hint {
-      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
-      background: rgba(0,0,0,0.55);
+      position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(8px);
       color: #fff; font-family: -apple-system, sans-serif; font-size: 14px;
-      padding: 10px 22px; border-radius: 24px;
-      z-index: 5; pointer-events: none;
-      backdrop-filter: blur(8px);
+      padding: 10px 22px; border-radius: 24px; z-index: 5; pointer-events: none;
+      transition: opacity 0.4s;
     }
   </style>
 </head>
 <body>
-
   <video id="cam" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
-  <div id="hint" style="display:none">Tap to toggle happy / sad 🐾</div>
+  <div id="hint" style="display:none">Point at the Snoopy QR code 📷</div>
 
   <div id="splash">
     <h1>Snoopy AR 🐾</h1>
-    <p>Snoopy will appear right in front of you through your camera.</p>
+    <p>Point your camera at the Snoopy QR code to bring him to life.</p>
     <button id="start-btn">Start AR</button>
   </div>
 
+  <!-- jsQR for QR detection -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
   <script type="importmap">
-  {
-    "imports": {
+  { "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
       "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    }
-  }
+  }}
   </script>
 
   <script type="module">
@@ -75,41 +58,38 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
     document.getElementById('start-btn').addEventListener('click', async () => {
-      // Start rear camera
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false
         });
-        const video = document.getElementById('cam');
-        video.srcObject = stream;
-        // Rear cam — no mirror
-        video.style.transform = 'none';
+        document.getElementById('cam').srcObject = stream;
       } catch (e) {
-        alert('Camera permission needed for AR. Please allow camera access and try again.');
+        alert('Camera permission needed. Please allow and try again.');
         return;
       }
-
       document.getElementById('splash').style.display = 'none';
       document.getElementById('hint').style.display = 'block';
-      initScene();
+      initAR();
     });
 
-    function initScene() {
+    function initAR() {
       const canvas = document.getElementById('canvas');
+      const video  = document.getElementById('cam');
+      const hint   = document.getElementById('hint');
+
+      // Three.js setup
       const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       renderer.setSize(innerWidth, innerHeight);
-      renderer.setClearColor(0x000000, 0); // transparent so camera shows through
+      renderer.setClearColor(0x000000, 0);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.4;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-      const scene = new THREE.Scene();
+      const scene  = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 1000);
-      camera.position.set(0, 0, 0);
 
-      // Lighting to match real-world brightness
       scene.add(new THREE.AmbientLight(0xffffff, 2.5));
       const key = new THREE.DirectionalLight(0xffffff, 3);
       key.position.set(2, 4, 3);
@@ -118,37 +98,102 @@
       fill.position.set(-2, 1, -2);
       scene.add(fill);
 
+      // Model container for rotation
+      const pivot = new THREE.Group();
+      pivot.visible = false;
+      scene.add(pivot);
+
+      let mixer = null;
+      let modelReady = false;
+
       const loader = new GLTFLoader();
       loader.load('snoopy.glb', (gltf) => {
         const model = gltf.scene;
-
-        // Scale to ~0.5m tall, position 1.5m in front at chest height
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
         const sc = 0.5 / Math.max(size.x, size.y, size.z);
         model.scale.setScalar(sc);
         const center = box.getCenter(new THREE.Vector3());
-        model.position.set(-center.x * sc, -center.y * sc - 0.2, -1.5);
+        model.position.set(-center.x * sc, -center.y * sc - 0.2, 0);
+        pivot.add(model);
+        pivot.position.set(0, 0, -1.5);
 
-        scene.add(model);
-
-        // Play animations if any
-        const mixer = new THREE.AnimationMixer(model);
+        mixer = new THREE.AnimationMixer(model);
         gltf.animations.forEach(clip => mixer.clipAction(clip).play());
+        modelReady = true;
+      });
 
-        // Floating bob
-        let t = 0;
-        const baseY = model.position.y;
-        const clock = new THREE.Clock();
+      // QR detection via offscreen canvas
+      const qrCanvas = document.createElement('canvas');
+      const qrCtx = qrCanvas.getContext('2d', { willReadFrequently: true });
+      let qrVisible = false;
+      let lastQRTime = 0;
+      const QR_TIMEOUT = 800; // ms before hiding Snoopy after QR leaves frame
 
-        renderer.setAnimationLoop(() => {
-          const delta = clock.getDelta();
-          mixer.update(delta);
-          t += delta;
-          model.position.y = baseY + Math.sin(t * 1.5) * 0.04;
-          model.rotation.y = Math.sin(t * 0.4) * 0.2;
-          renderer.render(scene, camera);
-        });
+      function scanQR() {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          qrCanvas.width  = video.videoWidth  / 4; // scan at 1/4 res for speed
+          qrCanvas.height = video.videoHeight / 4;
+          qrCtx.drawImage(video, 0, 0, qrCanvas.width, qrCanvas.height);
+          const imgData = qrCtx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+          const code = jsQR(imgData.data, imgData.width, imgData.height);
+          if (code) {
+            lastQRTime = Date.now();
+            if (!qrVisible && modelReady) {
+              qrVisible = true;
+              pivot.visible = true;
+              hint.style.opacity = '0';
+            }
+          } else if (qrVisible && Date.now() - lastQRTime > QR_TIMEOUT) {
+            qrVisible = false;
+            pivot.visible = false;
+            hint.style.opacity = '1';
+          }
+        }
+      }
+
+      // Touch rotation — left/right only
+      let touchStartX = 0;
+      let rotY = 0;
+      canvas.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+      canvas.addEventListener('touchmove', e => {
+        const dx = e.touches[0].clientX - touchStartX;
+        touchStartX = e.touches[0].clientX;
+        rotY += dx * 0.01;
+      }, { passive: true });
+
+      // Mouse drag too (for desktop testing)
+      let dragging = false, mouseX = 0;
+      canvas.addEventListener('mousedown', e => { dragging = true; mouseX = e.clientX; });
+      canvas.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        rotY += (e.clientX - mouseX) * 0.01;
+        mouseX = e.clientX;
+      });
+      canvas.addEventListener('mouseup', () => dragging = false);
+
+      // Animate
+      const clock = new THREE.Clock();
+      let t = 0;
+      let baseY = -0.2;
+
+      renderer.setAnimationLoop(() => {
+        const delta = clock.getDelta();
+        if (mixer) mixer.update(delta);
+        t += delta;
+
+        // Apply rotation from drag
+        pivot.rotation.y = rotY;
+
+        // Gentle bob
+        if (pivot.children[0]) {
+          pivot.children[0].position.y = baseY + Math.sin(t * 1.5) * 0.04;
+        }
+
+        // Scan QR every ~100ms
+        if (Math.round(t * 10) % 1 === 0) scanQR();
+
+        renderer.render(scene, camera);
       });
 
       window.addEventListener('resize', () => {
