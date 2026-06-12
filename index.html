@@ -4,30 +4,55 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Snoopy AR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600&display=swap" rel="stylesheet" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%; height: 100%;
-      background: #000;
-      overflow: hidden; touch-action: none;
-      /* fill notch/safe areas with black */
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    }
-    #cam    { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
-    #canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
-
-    /* ── Splash ── */
-    @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600&display=swap');
     @font-face {
       font-family: 'SnoopyFont';
       src: url('snoopy_reg-webfont.otf') format('opentype');
     }
 
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+      touch-action: none;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right)
+               env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    /* Camera feed — behind everything */
+    #cam {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      background: #000;
+    }
+
+    /* Three.js canvas — transparent overlay */
+    #canvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      touch-action: none;
+    }
+
+    /* QR hint pill */
+    #hint {
+      position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(8px);
+      color: #fff; font-family: -apple-system, sans-serif; font-size: 14px;
+      padding: 10px 22px; border-radius: 24px;
+      z-index: 5; pointer-events: none;
+      transition: opacity 0.4s;
+    }
+
+    /* Splash screen */
     #splash {
       position: fixed; inset: 0; z-index: 10;
       background: #fff;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 20px;
+      display: flex; align-items: center; justify-content: center;
     }
 
     #splash-content {
@@ -37,9 +62,8 @@
 
     #splash h1 {
       font-family: 'SnoopyFont', cursive;
-      font-size: 52px; font-weight: 900;
+      font-size: 52px;
       color: #1a1a1a;
-      letter-spacing: -1px;
       line-height: 1;
     }
     #splash h1 em {
@@ -70,18 +94,10 @@
       transform: translateY(3px);
       box-shadow: 0 1px 0 #E8382D;
     }
-
-    /* ── AR hint pill ── */
-    #hint {
-      position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
-      background: rgba(0,0,0,0.55); backdrop-filter: blur(8px);
-      color: #fff; font-family: -apple-system, sans-serif; font-size: 14px;
-      padding: 10px 22px; border-radius: 24px; z-index: 5; pointer-events: none;
-      transition: opacity 0.4s;
-    }
   </style>
 </head>
 <body>
+
   <video id="cam" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
   <div id="hint" style="display:none">Point at the QR code</div>
@@ -95,11 +111,10 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-
   <script type="importmap">
   { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three":          "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/":  "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }}
   </script>
 
@@ -107,6 +122,7 @@
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+    // ── Start button ───────────────────────────────────────────────
     document.getElementById('start-btn').addEventListener('click', async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -114,7 +130,7 @@
           audio: false
         });
         document.getElementById('cam').srcObject = stream;
-      } catch (e) {
+      } catch {
         alert('Camera permission needed. Please allow and try again.');
         return;
       }
@@ -123,12 +139,13 @@
       initAR();
     });
 
+    // ── AR Scene ───────────────────────────────────────────────────
     function initAR() {
-      const canvas  = document.getElementById('canvas');
-      const video   = document.getElementById('cam');
-      const hint    = document.getElementById('hint');
+      const canvas = document.getElementById('canvas');
+      const video  = document.getElementById('cam');
+      const hint   = document.getElementById('hint');
 
-      // ── Three.js ──────────────────────────────────────────────
+      // Renderer
       const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       renderer.setSize(innerWidth, innerHeight);
@@ -137,15 +154,20 @@
       renderer.toneMappingExposure = 1.4;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-      const scene  = new THREE.Scene();
-      const cam3   = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 1000);
+      // Scene & camera
+      const scene = new THREE.Scene();
+      const cam3  = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 1000);
 
+      // Lighting
       scene.add(new THREE.AmbientLight(0xffffff, 2.5));
-      const key = new THREE.DirectionalLight(0xffffff, 3);
-      key.position.set(2, 4, 3); scene.add(key);
-      const fill = new THREE.DirectionalLight(0xffffff, 1.5);
-      fill.position.set(-2, 1, -2); scene.add(fill);
+      const keyLight = new THREE.DirectionalLight(0xffffff, 3);
+      keyLight.position.set(2, 4, 3);
+      scene.add(keyLight);
+      const fillLight = new THREE.DirectionalLight(0xffffff, 1.5);
+      fillLight.position.set(-2, 1, -2);
+      scene.add(fillLight);
 
+      // Model container — positioned 1.5 m in front of camera
       const pivot = new THREE.Group();
       pivot.position.set(0, 0, -1.5);
       pivot.visible = false;
@@ -156,20 +178,23 @@
 
       new GLTFLoader().load('snoopy.glb', (gltf) => {
         model = gltf.scene;
-        const box = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const sc = 0.5 / Math.max(size.x, size.y, size.z);
-        model.scale.setScalar(sc);
+
+        // Auto-scale to ~0.5 m tall
+        const box    = new THREE.Box3().setFromObject(model);
+        const size   = box.getSize(new THREE.Vector3());
+        const sc     = 0.5 / Math.max(size.x, size.y, size.z);
         const center = box.getCenter(new THREE.Vector3());
+        model.scale.setScalar(sc);
         model.position.set(-center.x * sc, -center.y * sc - 0.2, 0);
         pivot.add(model);
+
         mixer = new THREE.AnimationMixer(model);
-        gltf.animations.forEach(c => mixer.clipAction(c).play());
+        gltf.animations.forEach(clip => mixer.clipAction(clip).play());
       });
 
-      // ── QR scanning (every 200 ms) ────────────────────────────
+      // ── QR detection (every 200 ms) ──────────────────────────────
       const qrCanvas = document.createElement('canvas');
-      const qrCtx    = qrCanvas.getContext('2d', { willReadFrequently: true });
+      const qrCtx   = qrCanvas.getContext('2d', { willReadFrequently: true });
       let qrVisible  = false;
       let lastSeen   = 0;
 
@@ -180,9 +205,8 @@
         if (!W || !H) return;
         qrCanvas.width = W; qrCanvas.height = H;
         qrCtx.drawImage(video, 0, 0, W, H);
-        const img  = qrCtx.getImageData(0, 0, W, H);
-        const code = jsQR(img.data, W, H);
-        if (code) {
+        const found = jsQR(qrCtx.getImageData(0, 0, W, H).data, W, H);
+        if (found) {
           lastSeen = Date.now();
           if (!qrVisible && model) {
             qrVisible = true;
@@ -196,41 +220,37 @@
         }
       }, 200);
 
-      // ── Touch rotation (drag left/right = Y, drag up/down = X) ──
-      let rotY = 0, rotX = 0;
-      let lastTouchX = null, lastTouchY = null;
+      // ── Touch & mouse rotation (X = tilt, Y = spin) ──────────────
+      let rotX = 0, rotY = 0;
+      let lastX = null, lastY = null;
 
       canvas.addEventListener('touchstart', e => {
         e.preventDefault();
-        lastTouchX = e.touches[0].clientX;
-        lastTouchY = e.touches[0].clientY;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
       }, { passive: false });
 
       canvas.addEventListener('touchmove', e => {
         e.preventDefault();
-        const x = e.touches[0].clientX;
-        const y = e.touches[0].clientY;
-        rotY += (x - lastTouchX) * 0.012;
-        rotX += (y - lastTouchY) * 0.012;
-        lastTouchX = x;
-        lastTouchY = y;
+        rotY += (e.touches[0].clientX - lastX) * 0.012;
+        rotX += (e.touches[0].clientY - lastY) * 0.012;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
       }, { passive: false });
 
-      canvas.addEventListener('touchend', () => { lastTouchX = null; lastTouchY = null; }, { passive: true });
+      canvas.addEventListener('touchend', () => { lastX = null; lastY = null; }, { passive: true });
 
-      // Mouse fallback for desktop
-      let mouseDown = false, lastMouseX = 0, lastMouseY = 0;
-      canvas.addEventListener('mousedown', e => { mouseDown = true; lastMouseX = e.clientX; lastMouseY = e.clientY; });
-      window.addEventListener('mousemove', e => {
+      let mouseDown = false;
+      canvas.addEventListener('mousedown',  e => { mouseDown = true;  lastX = e.clientX; lastY = e.clientY; });
+      window .addEventListener('mousemove', e => {
         if (!mouseDown) return;
-        rotY += (e.clientX - lastMouseX) * 0.012;
-        rotX += (e.clientY - lastMouseY) * 0.012;
-        lastMouseX = e.clientX;
-        lastMouseY = e.clientY;
+        rotY += (e.clientX - lastX) * 0.012;
+        rotX += (e.clientY - lastY) * 0.012;
+        lastX = e.clientX; lastY = e.clientY;
       });
       window.addEventListener('mouseup', () => mouseDown = false);
 
-      // ── Render loop ───────────────────────────────────────────
+      // ── Render loop ───────────────────────────────────────────────
       const clock = new THREE.Clock();
       let t = 0;
 
@@ -238,8 +258,8 @@
         const delta = clock.getDelta();
         t += delta;
         if (mixer) mixer.update(delta);
-        pivot.rotation.y = rotY;
         pivot.rotation.x = rotX;
+        pivot.rotation.y = rotY;
         if (model) model.position.y = -0.2 + Math.sin(t * 1.5) * 0.04;
         renderer.render(scene, cam3);
       });
@@ -251,5 +271,6 @@
       });
     }
   </script>
+
 </body>
 </html>
