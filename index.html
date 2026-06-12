@@ -4,71 +4,119 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Snoopy AR</title>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
   <style>
-    * { margin: 0; padding: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-
-    #scanning-hint {
-      position: fixed;
-      bottom: 40px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.6);
-      color: #fff;
-      font-family: -apple-system, sans-serif;
-      font-size: 15px;
-      font-weight: 500;
-      padding: 10px 22px;
-      border-radius: 24px;
-      pointer-events: none;
-      z-index: 10;
-      white-space: nowrap;
+    #status {
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.7); color: #fff;
+      font-family: -apple-system, sans-serif; font-size: 14px;
+      padding: 8px 18px; border-radius: 20px; z-index: 100;
+      white-space: nowrap; max-width: 90vw; text-align: center;
+    }
+    #hint {
+      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.6); color: #fff;
+      font-family: -apple-system, sans-serif; font-size: 15px;
+      padding: 10px 22px; border-radius: 24px; z-index: 100;
+      display: none;
     }
   </style>
 </head>
 <body>
+  <div id="status">⏳ Loading AR…</div>
+  <div id="hint">📷 Point at the Snoopy QR code</div>
 
-  <div id="scanning-hint">📷 Point at the Snoopy QR code</div>
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 
-  <a-scene
-    mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: no;"
-    color-space="sRGB"
-    renderer="colorManagement: true; physicallyCorrectLights: true;"
-    vr-mode-ui="enabled: false"
-    device-orientation-permission-ui="enabled: false"
-  >
-    <a-assets>
-      <a-asset-item id="snoopy-model" src="source/My Snoopy Model.glb"></a-asset-item>
-    </a-assets>
+    const status = document.getElementById('status');
+    const hint   = document.getElementById('hint');
 
-    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+    function setStatus(msg) {
+      status.textContent = msg;
+      console.log('[AR]', msg);
+    }
 
-    <a-entity mindar-image-target="targetIndex: 0">
-      <!-- Scale tuned for a ~10cm printed QR code; adjust scale if too big/small -->
-      <a-gltf-model
-        id="snoopy"
-        src="#snoopy-model"
-        position="0 0 0"
-        rotation="0 0 0"
-        scale="0.05 0.05 0.05"
-        animation__float="property: position; from: 0 0.08 0; to: 0 0.16 0; dir: alternate; dur: 1600; loop: true; easing: easeInOutSine"
-      ></a-gltf-model>
-    </a-entity>
-  </a-scene>
+    try {
+      setStatus('⏳ Loading MindAR…');
+      const { MindARThree } = await import('https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js');
 
-  <script>
-    const hint = document.getElementById('scanning-hint');
+      setStatus('⏳ Setting up scene…');
+      const mindarThree = new MindARThree({
+        container: document.body,
+        imageTargetSrc: 'targets.mind',
+        uiLoading: 'no',
+        uiScanning: 'no',
+        uiError: 'no',
+      });
 
-    document.addEventListener('targetFound', () => {
-      hint.textContent = '🐶 Snoopy found!';
-      setTimeout(() => { hint.style.opacity = '0'; }, 2000);
-    });
+      const { renderer, scene, camera } = mindarThree;
 
-    document.addEventListener('targetLost', () => {
-      hint.style.opacity = '1';
-      hint.textContent = '📷 Point at the Snoopy QR code';
-    });
+      // Lighting
+      scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+      const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+      dir.position.set(1, 2, 1);
+      scene.add(dir);
+
+      // Attach anchor to target 0
+      const anchor = mindarThree.addAnchor(0);
+
+      // Load Snoopy GLB
+      setStatus('⏳ Loading Snoopy model…');
+      const loader = new GLTFLoader();
+      const gltf = await new Promise((res, rej) => {
+        loader.load('source/My%20Snoopy%20Model.glb', res, undefined, rej);
+      });
+
+      const model = gltf.scene;
+
+      // Auto-fit scale so model is roughly 1 unit tall (matches ~10cm QR code)
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const targetSize = 0.8; // 80% of the QR code width
+      model.scale.setScalar(targetSize / maxDim);
+
+      // Center it and lift slightly above the QR
+      const center = box.getCenter(new THREE.Vector3());
+      model.position.x = -center.x * (targetSize / maxDim);
+      model.position.y = -center.y * (targetSize / maxDim) + 0.1;
+      model.position.z = -center.z * (targetSize / maxDim);
+
+      anchor.group.add(model);
+
+      // Show/hide hint based on tracking
+      anchor.onTargetFound = () => {
+        hint.textContent = '🐶 Snoopy!';
+        hint.style.display = 'block';
+        setTimeout(() => { hint.style.display = 'none'; }, 2000);
+        status.style.display = 'none';
+      };
+      anchor.onTargetLost = () => {
+        hint.textContent = '📷 Point at the Snoopy QR code';
+        hint.style.display = 'block';
+        status.style.display = 'none';
+      };
+
+      // Floating animation
+      let t = 0;
+      renderer.setAnimationLoop(() => {
+        t += 0.016;
+        model.position.y += Math.sin(t * 2) * 0.0005;
+        renderer.render(scene, camera);
+      });
+
+      setStatus('📷 Starting camera…');
+      await mindarThree.start();
+      setStatus('✅ Ready — point at QR code');
+      hint.style.display = 'block';
+
+    } catch (err) {
+      setStatus('❌ Error: ' + err.message);
+      console.error(err);
+    }
   </script>
 </body>
 </html>
