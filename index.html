@@ -221,7 +221,7 @@
       }, 200);
 
       // ── Touch: 1 finger = rotate, 2 fingers = pinch zoom ────────
-      let rotX = 0, rotY = 0, scale = 1;
+      let rotX = 0, rotY = 0.5, scale = 1;  // 0.5 = ~30° to the right
       let lastX = null, lastY = null, lastPinchDist = null;
 
       const pinchDist = e => Math.hypot(
