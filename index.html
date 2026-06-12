@@ -4,292 +4,145 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Snoopy AR</title>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0a0a1a; overflow: hidden; font-family: -apple-system, sans-serif; }
-    canvas { display: block; touch-action: none; }
+    body { overflow: hidden; font-family: -apple-system, sans-serif; background: #000; }
 
-    #ui {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      display: flex; flex-direction: column; align-items: center;
-      padding: 24px 24px 40px;
-      pointer-events: none;
-    }
-    #mood {
-      font-size: 48px;
-      margin-bottom: 8px;
-      transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
-    }
-    #mood.bounce { transform: scale(1.5); }
-    #label {
-      color: rgba(255,255,255,0.9);
-      font-size: 18px;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      margin-bottom: 6px;
-    }
-    #hint {
-      color: rgba(255,255,255,0.45);
-      font-size: 13px;
-    }
-
-    #ar-btn {
-      position: fixed; top: 20px; right: 20px;
-      background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.25);
-      color: white;
-      padding: 10px 18px;
-      border-radius: 24px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      backdrop-filter: blur(12px);
-      pointer-events: all;
-      display: flex; align-items: center; gap: 8px;
-    }
-    #ar-btn:active { opacity: 0.7; }
-
-    model-viewer {
-      position: absolute;
-      width: 1px; height: 1px;
-      opacity: 0; pointer-events: none;
-    }
-
-    #loading {
-      position: fixed; inset: 0;
+    #splash {
+      position: fixed; inset: 0; z-index: 20;
       background: #0a0a1a;
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 16px; z-index: 10;
+      align-items: center; justify-content: center; gap: 20px;
     }
-    #loading-emoji { font-size: 64px; animation: pulse 1.2s ease-in-out infinite; }
-    #loading-text { color: rgba(255,255,255,0.5); font-size: 15px; }
-    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.15)} }
+    #splash-emoji { font-size: 80px; animation: pulse 1.4s ease-in-out infinite; }
+    #splash-title { color: #fff; font-size: 28px; font-weight: 700; }
+    #splash-sub   { color: rgba(255,255,255,0.5); font-size: 15px; text-align: center; max-width: 280px; line-height: 1.6; }
+    #start-btn {
+      margin-top: 8px;
+      padding: 14px 40px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff; border: none; border-radius: 32px;
+      font-size: 17px; font-weight: 700; cursor: pointer;
+      box-shadow: 0 4px 24px rgba(102,126,234,0.5);
+    }
+    #start-btn:active { opacity: 0.8; }
 
-    .stars {
-      position: fixed; inset: 0;
-      background: radial-gradient(ellipse at 50% 0%, #1a1a3e 0%, #0a0a1a 70%);
-      pointer-events: none; z-index: -1;
+    #hint-overlay {
+      position: fixed; bottom: 40px; left: 0; right: 0;
+      display: flex; justify-content: center;
+      pointer-events: none; z-index: 10;
+      opacity: 0; transition: opacity 0.5s;
     }
+    #hint-overlay.visible { opacity: 1; }
+    #hint-pill {
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.9);
+      padding: 12px 24px;
+      border-radius: 32px;
+      font-size: 15px;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    #found-badge {
+      position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,200,100,0.85);
+      color: #fff; font-size: 14px; font-weight: 700;
+      padding: 8px 22px; border-radius: 20px;
+      z-index: 10; opacity: 0; transition: opacity 0.4s;
+      pointer-events: none;
+    }
+    #found-badge.visible { opacity: 1; }
+
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
   </style>
 </head>
 <body>
-  <div class="stars"></div>
-  <div id="loading">
-    <div id="loading-emoji">🐾</div>
-    <div id="loading-text">Loading Snoopy…</div>
+
+  <!-- Splash screen -->
+  <div id="splash">
+    <div id="splash-emoji">🐾</div>
+    <div id="splash-title">Snoopy AR</div>
+    <div id="splash-sub">Point your camera at the Snoopy QR code to bring him to life!</div>
+    <button id="start-btn">Start AR Experience</button>
   </div>
 
-  <canvas id="canvas"></canvas>
-
-  <div id="ui">
-    <div id="mood">😢</div>
-    <div id="label">Sad Snoopy</div>
-    <div id="hint">Tap to cheer him up</div>
+  <!-- Scanning hint -->
+  <div id="hint-overlay">
+    <div id="hint-pill">📷 Point at the Snoopy QR code</div>
   </div>
 
-  <button id="ar-btn">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M1 6l5-4h12l5 4v12l-5 4H6l-5-4z"/>
-      <circle cx="12" cy="12" r="3"/>
-    </svg>
-    View in AR
-  </button>
+  <!-- Found badge -->
+  <div id="found-badge">🐶 Snoopy found!</div>
 
-  <!-- Hidden model-viewer purely for AR launch -->
-  <model-viewer
-    id="mv"
-    src="source/My Snoopy Model.glb"
-    ar
-    ar-modes="webxr scene-viewer quick-look"
-    camera-controls
-    shadow-intensity="1"
-  ></model-viewer>
+  <!-- MindAR + A-Frame scene -->
+  <a-scene
+    id="ar-scene"
+    mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no;"
+    color-space="sRGB"
+    renderer="colorManagement: true; physicallyCorrectLights: true;"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+    style="display:none"
+  >
+    <a-assets>
+      <a-asset-item id="snoopy-model" src="source/My Snoopy Model.glb"></a-asset-item>
+    </a-assets>
 
-  <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164/build/three.module.js';
-    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/loaders/GLTFLoader.js';
-    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/controls/OrbitControls.js';
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    const canvas = document.getElementById('canvas');
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    <!-- Anchor on target index 0 (the QR code) -->
+    <a-entity mindar-image-target="targetIndex: 0">
+      <!-- Snoopy floats just above the QR code, scaled to fit -->
+      <a-gltf-model
+        id="snoopy"
+        src="#snoopy-model"
+        position="0 0.1 0"
+        rotation="-90 0 0"
+        scale="0.001 0.001 0.001"
+        animation="property: position; from: 0 0.12 0; to: 0 0.18 0; dir: alternate; dur: 1800; loop: true; easing: easeInOutSine"
+      ></a-gltf-model>
+    </a-entity>
+  </a-scene>
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
-    camera.position.set(0, 0, 5);
+  <script>
+    const splash     = document.getElementById('splash');
+    const startBtn   = document.getElementById('start-btn');
+    const arScene    = document.getElementById('ar-scene');
+    const hintOverlay= document.getElementById('hint-overlay');
+    const foundBadge = document.getElementById('found-badge');
 
-    // Lighting
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
-    const key = new THREE.DirectionalLight(0xffffff, 1.5);
-    key.position.set(5, 10, 7);
-    key.castShadow = true;
-    scene.add(key);
-    const fill = new THREE.DirectionalLight(0x8ab4f8, 0.4);
-    fill.position.set(-5, 2, -3);
-    scene.add(fill);
+    startBtn.addEventListener('click', () => {
+      splash.style.display = 'none';
+      arScene.style.display = 'block';
+      hintOverlay.classList.add('visible');
 
-    const controls = new OrbitControls(camera, canvas);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.minDistance = 1;
-    controls.maxDistance = 2000;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 1.5;
-
-    // State
-    let sad = null;   // first child group
-    let happy = null; // second child group
-    let isSad = true;
-    let isAnimating = false;
-
-    const loader = new GLTFLoader();
-    loader.load('source/My Snoopy Model.glb', (gltf) => {
-      const model = gltf.scene;
-
-      // Two snoopys are the two direct children of the root
-      const children = model.children;
-      sad   = children[0];   // node_id23
-      happy = children[1];   // node_id42
-
-      happy.visible = false;
-
-      scene.add(model);
-
-      // Auto-fit camera to the sad snoopy's bounding box
-      fitCamera(sad);
-
-      document.getElementById('loading').style.display = 'none';
-    },
-    undefined,
-    (err) => {
-      document.getElementById('loading-text').textContent = 'Failed to load model';
-      console.error(err);
+      // Start MindAR after scene is visible
+      arScene.addEventListener('loaded', () => {
+        const sceneEl = arScene;
+        sceneEl.systems['mindar-image-system'].start();
+      }, { once: true });
     });
 
-    function fitCamera(obj) {
-      const box = new THREE.Box3().setFromObject(obj);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const fov = camera.fov * (Math.PI / 180);
-      let dist = (maxDim / 2) / Math.tan(fov / 2);
-      dist *= 1.5;
-      camera.position.set(center.x, center.y, center.z + dist);
-      camera.near = dist / 100;
-      camera.far  = dist * 100;
-      camera.updateProjectionMatrix();
-      controls.target.copy(center);
-      controls.minDistance = dist * 0.3;
-      controls.maxDistance = dist * 5;
-      controls.update();
-    }
+    // Target found / lost events
+    document.addEventListener('targetFound', () => {
+      hintOverlay.classList.remove('visible');
+      foundBadge.classList.add('visible');
 
-    // Toggle interaction
-    function toggleSnoopy() {
-      if (!sad || !happy || isAnimating) return;
-      isAnimating = true;
-
-      const outgoing = isSad ? sad : happy;
-      const incoming = isSad ? happy : sad;
-      const moodEl   = document.getElementById('mood');
-      const labelEl  = document.getElementById('label');
-      const hintEl   = document.getElementById('hint');
-
-      // Quick scale-out then swap
-      let t = 0;
-      const startScale = outgoing.scale.clone();
-      const duration = 300;
-      const start = performance.now();
-
-      function shrink(now) {
-        t = Math.min((now - start) / duration, 1);
-        const s = 1 - t * t;
-        outgoing.scale.set(s, s, s);
-        if (t < 1) {
-          requestAnimationFrame(shrink);
-        } else {
-          outgoing.visible = false;
-          outgoing.scale.copy(startScale);
-
-          incoming.scale.set(0.01, 0.01, 0.01);
-          incoming.visible = true;
-
-          fitCamera(incoming);
-
-          isSad = !isSad;
-          if (isSad) {
-            moodEl.textContent = '😢';
-            labelEl.textContent = 'Sad Snoopy';
-            hintEl.textContent  = 'Tap to cheer him up';
-          } else {
-            moodEl.textContent = '😄';
-            labelEl.textContent = 'Happy Snoopy!';
-            hintEl.textContent  = 'Tap to make him sad again';
-          }
-
-          // Bounce emoji
-          moodEl.classList.add('bounce');
-          setTimeout(() => moodEl.classList.remove('bounce'), 400);
-
-          // Scale-in
-          const start2 = performance.now();
-          function grow(now2) {
-            const t2 = Math.min((now2 - start2) / duration, 1);
-            const s2 = t2 < 0.5
-              ? 4 * t2 * t2 * t2
-              : 1 - Math.pow(-2 * t2 + 2, 3) / 2; // ease in-out cubic
-            incoming.scale.set(s2, s2, s2);
-            if (t2 < 1) {
-              requestAnimationFrame(grow);
-            } else {
-              incoming.scale.set(1, 1, 1);
-              isAnimating = false;
-            }
-          }
-          requestAnimationFrame(grow);
-        }
-      }
-      requestAnimationFrame(shrink);
-    }
-
-    canvas.addEventListener('click', toggleSnoopy);
-    canvas.addEventListener('touchend', (e) => {
-      // Only toggle if it wasn't a drag (OrbitControls drag detection)
-      if (e.changedTouches[0]) toggleSnoopy();
-    }, { passive: true });
-
-    // AR button — trigger model-viewer's AR
-    document.getElementById('ar-btn').addEventListener('click', () => {
-      const mv = document.getElementById('mv');
-      if (mv && mv.canActivateAR) {
-        mv.activateAR();
-      } else {
-        alert('AR is not supported on this device/browser.\nTry opening on your phone!');
-      }
+      // Scale-in animation on first find
+      const snoopy = document.getElementById('snoopy');
+      snoopy.setAttribute('animation__scale',
+        'property: scale; from: 0.0001 0.0001 0.0001; to: 0.001 0.001 0.001; dur: 600; easing: easeOutElastic');
     });
 
-    // Resize
-    window.addEventListener('resize', () => {
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
+    document.addEventListener('targetLost', () => {
+      hintOverlay.classList.add('visible');
+      foundBadge.classList.remove('visible');
     });
-
-    // Render loop
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    }
-    animate();
   </script>
-
-  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
 </body>
 </html>
