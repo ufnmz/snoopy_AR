@@ -1,86 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Snoopy AR</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-    #status {
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      background: rgba(0,0,0,0.75); color: #fff;
-      font-family: -apple-system, sans-serif; font-size: 14px;
-      padding: 8px 18px; border-radius: 20px; z-index: 100;
-      max-width: 90vw; text-align: center;
-    }
-  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 </head>
 <body>
-  <div id="status">⏳ Loading…</div>
+  <a-scene
+    mindar-image="imageTargetSrc: targets.mind"
+    color-space="sRGB"
+    renderer="colorManagement: true; physicallyCorrectLights: true"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+  >
+    <a-assets>
+      <a-asset-item id="snoopy" src="source/snoopy.glb"></a-asset-item>
+    </a-assets>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-  <script type="module">
-    import { MindARThree } from 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js';
-
-    const status = document.getElementById('status');
-    const s = msg => { status.textContent = msg; console.log(msg); };
-
-    try {
-      s('⏳ Building scene…');
-
-      const mindarThree = new MindARThree({
-        container: document.body,
-        imageTargetSrc: 'targets.mind',
-        uiLoading: 'no',
-        uiScanning: 'no',
-        uiError: 'no',
-      });
-
-      const { renderer, scene, camera } = mindarThree;
-
-      scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-      const dir = new THREE.DirectionalLight(0xffffff, 1.5);
-      dir.position.set(1, 2, 1);
-      scene.add(dir);
-
-      const anchor = mindarThree.addAnchor(0);
-
-      s('⏳ Loading Snoopy…');
-      const loader = new THREE.GLTFLoader();
-      const gltf = await new Promise((res, rej) =>
-        loader.load('source/My%20Snoopy%20Model.glb', res, undefined, rej)
-      );
-
-      const model = gltf.scene;
-      const box = new THREE.Box3().setFromObject(model);
-      const size = box.getSize(new THREE.Vector3());
-      const sc = 0.8 / Math.max(size.x, size.y, size.z);
-      model.scale.setScalar(sc);
-      const center = box.getCenter(new THREE.Vector3());
-      model.position.set(-center.x * sc, -center.y * sc + 0.1, -center.z * sc);
-
-      anchor.group.add(model);
-      anchor.onTargetFound = () => s('🐶 Snoopy found!');
-      anchor.onTargetLost  = () => s('📷 Point at the QR code');
-
-      let t = 0;
-      renderer.setAnimationLoop(() => {
-        t += 0.02;
-        model.position.y = -center.y * sc + 0.1 + Math.sin(t) * 0.03;
-        renderer.render(scene, camera);
-      });
-
-      s('📷 Starting camera…');
-      await mindarThree.start();
-      s('📷 Point at the Snoopy QR code');
-
-    } catch (err) {
-      s('❌ ' + err.message);
-      console.error(err);
-    }
-  </script>
+    <a-entity mindar-image-target="targetIndex: 0">
+      <a-gltf-model
+        src="#snoopy"
+        scale="0.05 0.05 0.05"
+        position="0 0.05 0"
+        rotation="0 0 0"
+      ></a-gltf-model>
+    </a-entity>
+  </a-scene>
 </body>
 </html>
