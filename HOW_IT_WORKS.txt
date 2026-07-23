@@ -598,11 +598,11 @@ In this project, all three live in one file (index.html) for simplicity.
 --------------------------------------------------------------------------------
 
 The QR code (qr.png) encodes the URL of your GitHub Pages site:
-  https://mo-habbal.github.io/snoopy_AR/
+  https://ufnmz.github.io/snoopy_AR/
 
 It was generated with Python using the "qrcode" library:
   import qrcode
-  img = qrcode.make("https://mo-habbal.github.io/snoopy_AR/")
+  img = qrcode.make("https://ufnmz.github.io/snoopy_AR/")
   img.save("qr.png")
 
 Any QR code scanner app reads it and opens that URL in the browser.
@@ -618,9 +618,9 @@ GitHub Pages is a free hosting service by GitHub. It serves your repository
 files as a live website.
 
 Setup:
-  1. Create a GitHub repository (in this case: Mo-Habbal/snoopy_AR)
+  1. Create a GitHub repository (in this case: ufnmz/snoopy_AR)
   2. Go to Settings → Pages → set source to "main branch, root folder"
-  3. GitHub Pages serves index.html at: https://mo-habbal.github.io/snoopy_AR/
+  3. GitHub Pages serves index.html at: https://ufnmz.github.io/snoopy_AR/
 
 Deploying updates:
   Every time you git push to the main branch, GitHub Pages automatically
